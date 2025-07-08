@@ -2,9 +2,8 @@
 
 [![Go 参考文档](https://pkg.go.dev/badge/github.com/zjguoxin/goscache.svg)](https://pkg.go.dev/github.com/zjguoxin/goscache)
 [![许可证: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Go 代码质量报告](https://goreportcard.com/badge/github.com/zjguoxin/goscache)](https://goreportcard.com/report/github.com/zjguoxin/goscache)
 
-一个支持内存和 Redis 后端的 Go 缓存库
+支持内存和 Redis 的 Go 缓存库
 
 ## 目录
 
@@ -48,10 +47,10 @@
 ## <span id="安装与要求">⚙️ 安装与要求</span>
 
 - Go 1.16+
-- Redis Server 5.0+ (如果使用 Redis 后端)
+- Redis Server 5.0+ (如果使用 Redis 服务)
 
 ```bash
-go get github.com/zjguoxin/goscache
+go get github.com/zjguoxin/goscache@v1.0.0
 ```
 
 ## <span id="快速入门">🚀 快速入门</span>
@@ -176,7 +175,7 @@ redisCache, err := cache.NewCache(cache.CacheTypeRedis,
 | `Get(key string) (interface{}, bool)`                                | 获取键值             | `key`: 键名                                                               | `interface{}`: 获取的值<br>`bool`: 是否存在 |
 | `Delete(key string)`                                                 | 删除键值             | `key`: 键名                                                               | -                                           |
 | `SetHash(key string, value map[string]interface{}) error`            | 设置哈希表           | `key`: 哈希表键名<br>`value`: 哈希表数据(map)                             | `error`: 错误信息                           |
-| `GetHashField(key string, field string) (string, error)`             | 获取哈希字段值       | `key`: 哈希表键名<br>`field`: 字段名                                      | `string`: 字段值<br>`error`: 错误信息       |
+| `GetHashField(key string, field string) (interface{}, error)`        | 获取哈希字段值       | `key`: 哈希表键名<br>`field`: 字段名                                      | `interface{}`: 字段值<br>`error`: 错误信息  |
 | `DelHash(key, field string) error`                                   | 删除哈希字段         | `key`: 哈希表键名<br>`field`: 字段名                                      | `error`: 错误信息                           |
 | `ExistHash(key, field string) bool`                                  | 检查哈希字段是否存在 | `key`: 哈希表键名<br>`field`: 字段名                                      | `bool`: 是否存在                            |
 

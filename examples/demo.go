@@ -67,7 +67,11 @@ func main() {
 	if err := redisCache.SetHash(hashKey, profile, time.Hour); err != nil {
 		fmt.Println("设置哈希表失败:", err)
 	}
+	// 获取整个哈希表
+	if userInfo, err := redisCache.GetHash(hashKey); err == nil {
+		fmt.Println("获取哈希表:", userInfo)
 
+	}
 	// 获取单个字段
 	if age, err := redisCache.GetHashField(hashKey, "age"); err == nil {
 		fmt.Printf("获取哈希字段: age=%s\n", age)

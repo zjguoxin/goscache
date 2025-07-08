@@ -51,7 +51,7 @@ type CacheInterface interface {
 
 	// 哈希表操作
 	SetHash(key string, value map[string]interface{}, expiration time.Duration) error
-	GetHash(key string) (map[string]string, error)
+	GetHash(key string) (map[string]interface{}, error)
 	GetHashField(key, field string) (string, error)
 	DelHash(key, field string) error
 	ExistHash(key, field string) (bool, error)

@@ -9,7 +9,11 @@
 package cache
 
 import (
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -109,40 +113,109 @@ func (m *MemoryCache) SetHash(key string, value map[string]interface{}, expirati
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if _, exists := m.hashMaps[key]; !exists {
-		m.hashMaps[key] = make(map[string]interface{})
-	}
+	// 初始化哈希表（原子性替换）
+	newHash := make(map[string]interface{}, len(value))
 
+	// 类型标记转换（与 Redis 方案一致）
 	for field, val := range value {
-		m.hashMaps[key][field] = val
+		switch v := val.(type) {
+		case bool:
+			if v {
+				newHash[field] = "bool:true"
+			} else {
+				newHash[field] = "bool:false"
+			}
+		case int, int32, int64, uint, uint32, uint64:
+			newHash[field] = fmt.Sprintf("int:%v", v)
+		case float32, float64:
+			newHash[field] = fmt.Sprintf("float:%v", v)
+		case string:
+			newHash[field] = fmt.Sprintf("string:%s", v) // 明确标记字符串
+		case []byte:
+			newHash[field] = fmt.Sprintf("bytes:%x", v) // 二进制转十六进制
+		default:
+			// 复杂类型回退到 JSON
+			jsonData, err := json.Marshal(v)
+			if err != nil {
+				return fmt.Errorf("unsupported type for field %s: %w", field, err)
+			}
+			newHash[field] = fmt.Sprintf("json:%s", jsonData)
+		}
 	}
 
+	// 原子性更新哈希表
+	m.hashMaps[key] = newHash
+
+	// 设置过期时间
 	if expiration > 0 {
 		m.hashExpirations[key] = time.Now().Add(expiration)
-	} else if expiration == 0 {
+	} else if expiration == 0 && m.defaultExpiration > 0 {
 		m.hashExpirations[key] = time.Now().Add(m.defaultExpiration)
+	} else {
+		delete(m.hashExpirations, key) // 永久有效
 	}
 
 	return nil
 }
 
 // GetHash 获取整个哈希表
-func (m *MemoryCache) GetHash(key string) (map[string]string, error) {
+func (m *MemoryCache) GetHash(key string) (map[string]interface{}, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
+	// 检查过期
 	if expiry, exists := m.hashExpirations[key]; exists && time.Now().After(expiry) {
-		return nil, fmt.Errorf("hash key %s expired", key)
+		delete(m.hashMaps, key)
+		delete(m.hashExpirations, key)
+		return nil, fmt.Errorf("key expired")
 	}
 
-	hash, exists := m.hashMaps[key]
+	// 获取原始数据
+	rawHash, exists := m.hashMaps[key]
 	if !exists {
-		return nil, fmt.Errorf("hash key %s not found", key)
+		return nil, fmt.Errorf("key not found")
 	}
 
-	result := make(map[string]string, len(hash))
-	for k, v := range hash {
-		result[k] = fmt.Sprintf("%v", v)
+	// 类型转换
+	result := make(map[string]interface{}, len(rawHash))
+	for field, markedVal := range rawHash {
+		markedStr, ok := markedVal.(string)
+		if !ok {
+			result[field] = markedVal // 非字符串直接保留（如旧数据）
+			continue
+		}
+
+		// 解析类型标记
+		parts := strings.SplitN(markedStr, ":", 2)
+		if len(parts) != 2 {
+			result[field] = markedStr // 无标记则保持字符串
+			continue
+		}
+
+		switch parts[0] {
+		case "bool":
+			result[field] = parts[1] == "true"
+		case "int":
+			val, _ := strconv.ParseInt(parts[1], 10, 64)
+			result[field] = val
+		case "float":
+			val, _ := strconv.ParseFloat(parts[1], 64)
+			result[field] = val
+		case "string":
+			result[field] = parts[1]
+		case "bytes":
+			data, _ := hex.DecodeString(parts[1])
+			result[field] = data
+		case "json":
+			var data interface{}
+			if err := json.Unmarshal([]byte(parts[1]), &data); err == nil {
+				result[field] = data
+			} else {
+				result[field] = parts[1] // 解析失败保留原始 JSON
+			}
+		default:
+			result[field] = markedStr // 未知标记保持原样
+		}
 	}
 
 	return result, nil
