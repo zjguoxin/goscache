@@ -174,6 +174,7 @@ redisCache, err := cache.NewCache(cache.CacheTypeRedis,
 | `Set(key string, value interface{}, expiration time.Duration) error` | 设置键值对           | `key`: 键名<br>`value`: 存储值<br>`expiration`: 过期时间(-1 表示永不过期) | `error`: 错误信息                           |
 | `Get(key string) (interface{}, bool)`                                | 获取键值             | `key`: 键名                                                               | `interface{}`: 获取的值<br>`bool`: 是否存在 |
 | `Delete(key string)`                                                 | 删除键值             | `key`: 键名                                                               | -                                           |
+| `Exists(key string)`                                                 | 检查键值是否存在     | `key`: 键名                                                               | `bool`: 是否存在                            |
 | `SetHash(key string, value map[string]interface{}) error`            | 设置哈希表           | `key`: 哈希表键名<br>`value`: 哈希表数据(map)                             | `error`: 错误信息                           |
 | `GetHashField(key string, field string) (interface{}, error)`        | 获取哈希字段值       | `key`: 哈希表键名<br>`field`: 字段名                                      | `interface{}`: 字段值<br>`error`: 错误信息  |
 | `DelHash(key, field string) error`                                   | 删除哈希字段         | `key`: 哈希表键名<br>`field`: 字段名                                      | `error`: 错误信息                           |

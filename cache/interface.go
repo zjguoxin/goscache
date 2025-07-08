@@ -46,6 +46,7 @@ type CacheInterface interface {
 	// 基础操作
 	Get(key string) (interface{}, bool, error)
 	Set(key string, value interface{}, expiration time.Duration) error
+	Exists(key string) (bool, error)
 	Delete(key string) error
 	Close() error
 

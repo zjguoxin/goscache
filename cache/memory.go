@@ -25,6 +25,7 @@ type MemoryCache struct {
 	cache             *cache.Cache
 	hashMaps          map[string]map[string]interface{}
 	hashExpirations   map[string]time.Time
+	keyExpirations    map[string]time.Time
 	mu                sync.RWMutex
 	defaultExpiration time.Duration
 	cleanupInterval   time.Duration
@@ -37,6 +38,7 @@ func NewMemoryCache(config *CacheConfig) (*MemoryCache, error) {
 		cache:             cache.New(config.DefaultExp, config.CleanupInt),
 		hashMaps:          make(map[string]map[string]interface{}),
 		hashExpirations:   make(map[string]time.Time),
+		keyExpirations:    make(map[string]time.Time),
 		defaultExpiration: config.DefaultExp,
 		cleanupInterval:   config.CleanupInt,
 		stopChan:          make(chan struct{}),
@@ -96,6 +98,11 @@ func (m *MemoryCache) Set(key string, value interface{}, expiration time.Duratio
 	}
 
 	m.cache.Set(key, value, exp)
+	if exp != cache.NoExpiration {
+		m.keyExpirations[key] = time.Now().Add(exp)
+	} else {
+		delete(m.keyExpirations, key)
+	}
 	return nil
 }
 
@@ -106,6 +113,22 @@ func (m *MemoryCache) Delete(key string) error {
 
 	m.cache.Delete(key)
 	return nil
+}
+
+func (m *MemoryCache) Exists(key string) (bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	// 1. 检查过期时间（如果有）
+	if expiry, exists := m.keyExpirations[key]; exists {
+		if time.Now().After(expiry) {
+			return false, nil
+		}
+	}
+
+	// 2. 检查键是否存在
+	_, found := m.cache.Get(key)
+	return found, nil
 }
 
 // SetHash 设置哈希表
@@ -226,21 +249,42 @@ func (m *MemoryCache) GetHashField(key, field string) (string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
+	// 检查哈希表是否过期
 	if expiry, exists := m.hashExpirations[key]; exists && time.Now().After(expiry) {
 		return "", fmt.Errorf("hash key %s expired", key)
 	}
 
+	// 获取哈希表
 	hash, exists := m.hashMaps[key]
 	if !exists {
 		return "", fmt.Errorf("hash key %s not found", key)
 	}
 
-	val, ok := hash[field]
+	// 获取字段值
+	markedVal, ok := hash[field]
 	if !ok {
 		return "", fmt.Errorf("field %s not found in hash %s", field, key)
 	}
 
-	return fmt.Sprintf("%v", val), nil
+	// 解析带类型标记的值
+	markedStr, ok := markedVal.(string)
+	if !ok {
+		return fmt.Sprintf("%v", markedVal), nil // 非字符串直接转为字符串
+	}
+
+	// 解析类型标记（格式为 "type:value"）
+	parts := strings.SplitN(markedStr, ":", 2)
+	if len(parts) != 2 {
+		return markedStr, nil // 无类型标记则直接返回
+	}
+
+	// 根据类型返回原始值的字符串表示
+	switch parts[0] {
+	case "bool", "int", "float", "string", "bytes", "json":
+		return parts[1], nil
+	default:
+		return markedStr, nil // 未知类型标记保持原样
+	}
 }
 
 // DelHash 删除哈希表字段

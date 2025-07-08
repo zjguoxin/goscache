@@ -92,48 +92,55 @@ func (r *RedisCache) Delete(key string) error {
 	return r.client.Del(r.ctx, fullKey).Err()
 }
 
+func (r *RedisCache) Exists(key string) (bool, error) {
+	fullKey := r.getFullKey(key)
+	exists, err := r.client.Exists(r.ctx, fullKey).Result()
+	if err != nil {
+		return false, err
+	}
+	return exists > 0, nil
+}
+
 // SetHash 设置哈希表
 func (r *RedisCache) SetHash(key string, value map[string]interface{}, expiration time.Duration) error {
 	fullKey := r.getFullKey(key)
 
-	// 1. 类型标记转换：将 interface{} 转换为带类型前缀的字符串
+	// 1. 转换值为带类型标记的字符串
 	markedValue := make(map[string]interface{}, len(value))
 	for field, val := range value {
-		switch v := val.(type) {
-		case bool:
-			if v {
-				markedValue[field] = "bool:true"
-			} else {
-				markedValue[field] = "bool:false"
-			}
-		case int, int32, int64, uint, uint32, uint64:
-			markedValue[field] = fmt.Sprintf("int:%v", v)
-		case float32, float64:
-			markedValue[field] = fmt.Sprintf("float:%v", v)
-		case string:
-			markedValue[field] = fmt.Sprintf("string:%v", v) // 字符串无需额外处理
-		case []byte:
-			markedValue[field] = fmt.Sprintf("bytes:%x", v) // 二进制转为十六进制
-		default:
-			// 其他复杂类型（如结构体）回退到 JSON 序列化
-			jsonData, err := json.Marshal(v)
-			if err != nil {
-				return fmt.Errorf("unsupported type for field %s: %w", field, err)
-			}
-			markedValue[field] = fmt.Sprintf("json:%s", jsonData)
-		}
+		markedValue[field] = r.markValue(val)
 	}
 
-	// 2. 执行 Redis HMSet
-	if err := r.client.HMSet(r.ctx, fullKey, markedValue).Err(); err != nil {
-		return fmt.Errorf("redis hmset failed: %w", err)
-	}
-
-	// 3. 设置过期时间
+	// 2. 使用Pipeline批量操作
+	pipe := r.client.Pipeline()
+	pipe.HMSet(r.ctx, fullKey, markedValue)
 	if expiration > 0 {
-		return r.client.Expire(r.ctx, fullKey, expiration).Err()
+		pipe.Expire(r.ctx, fullKey, expiration)
 	}
-	return nil
+	_, err := pipe.Exec(r.ctx)
+	return err
+}
+
+// markValue 辅助方法，标记值类型
+func (r *RedisCache) markValue(val interface{}) string {
+	switch v := val.(type) {
+	case bool:
+		if v {
+			return "bool:true"
+		}
+		return "bool:false"
+	case int, int32, int64, uint, uint32, uint64:
+		return fmt.Sprintf("int:%v", v)
+	case float32, float64:
+		return fmt.Sprintf("float:%v", v)
+	case string:
+		return fmt.Sprintf("string:%s", v)
+	case []byte:
+		return fmt.Sprintf("bytes:%x", v)
+	default:
+		jsonData, _ := json.Marshal(v)
+		return fmt.Sprintf("json:%s", jsonData)
+	}
 }
 
 // GetHash 获取整个哈希表
@@ -184,14 +191,27 @@ func (r *RedisCache) GetHash(key string) (map[string]interface{}, error) {
 // GetHashField 获取哈希表字段
 func (r *RedisCache) GetHashField(key, field string) (string, error) {
 	fullKey := r.getFullKey(key)
-	val, err := r.client.HGet(r.ctx, fullKey, field).Result()
+	markedStr, err := r.client.HGet(r.ctx, fullKey, field).Result()
 	if err != nil {
 		if err == redis.Nil {
 			return "", fmt.Errorf("field %s not found in hash %s", field, key)
 		}
 		return "", fmt.Errorf("redis hget failed: %w", err)
 	}
-	return val, nil
+
+	// 解析类型标记（格式为 "type:value"）
+	parts := strings.SplitN(markedStr, ":", 2)
+	if len(parts) != 2 {
+		return markedStr, nil // 无类型标记则直接返回
+	}
+
+	// 根据类型返回原始值的字符串表示
+	switch parts[0] {
+	case "bool", "int", "float", "string", "bytes", "json":
+		return parts[1], nil
+	default:
+		return markedStr, nil // 未知类型标记保持原样
+	}
 }
 
 // DelHash 删除哈希表字段
@@ -213,6 +233,9 @@ func (r *RedisCache) ExistHash(key, field string) (bool, error) {
 // ExpireHash 设置哈希表过期时间
 func (r *RedisCache) ExpireHash(key string, expiration time.Duration) error {
 	fullKey := r.getFullKey(key)
+	if expiration <= 0 {
+		return fmt.Errorf("expiration must be positive")
+	}
 	return r.client.Expire(r.ctx, fullKey, expiration).Err()
 }
 
