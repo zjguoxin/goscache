@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zjguoxin/goscache/cache"
+	"github.com/zjguoxin/goscache/v2/cache"
 )
 
 func main() {

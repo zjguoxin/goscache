@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zjguoxin/goscache/cache"
+	"github.com/zjguoxin/goscache/v2/cache"
 )
 
 func TestMemoryCache_Basic(t *testing.T) {

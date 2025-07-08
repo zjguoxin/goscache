@@ -1,4 +1,4 @@
-module github.com/zjguoxin/goscache
+module github.com/zjguoxin/goscache/v2
 
 go 1.20
 
